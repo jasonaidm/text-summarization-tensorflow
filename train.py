@@ -1,7 +1,7 @@
+import argparse
 import time
 start = time.perf_counter()
 import tensorflow as tf
-import argparse
 import pickle
 import os
 from model import Model
@@ -10,6 +10,7 @@ from utils import build_dict, build_dataset, batch_iter
 # Uncomment next 2 lines to suppress error and Tensorflow info verbosity. Or change logging levels
 # tf.logging.set_verbosity(tf.logging.FATAL)
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
 
 def add_arguments(parser):
     parser.add_argument("--num_hidden", type=int, default=150, help="Network size.")
@@ -28,7 +29,6 @@ def add_arguments(parser):
     parser.add_argument("--with_model", action="store_true", help="Continue from previously saved model")
 
 
-
 parser = argparse.ArgumentParser()
 add_arguments(parser)
 args = parser.parse_args()
@@ -39,8 +39,9 @@ if not os.path.exists("saved_model"):
     os.mkdir("saved_model")
 else:
     if args.with_model:
+        # 获取训练好的模型的path
         old_model_checkpoint_path = open('saved_model/checkpoint', 'r')
-        old_model_checkpoint_path = "".join(["saved_model/",old_model_checkpoint_path.read().splitlines()[0].split('"')[1] ])
+        old_model_checkpoint_path = "".join(["saved_model/", old_model_checkpoint_path.read().splitlines()[0].split('"')[1] ])
 
 
 print("Building dictionary...")
@@ -53,12 +54,12 @@ with tf.Session() as sess:
     model = Model(reversed_dict, article_max_len, summary_max_len, args)
     sess.run(tf.global_variables_initializer())
     saver = tf.train.Saver(tf.global_variables())
-    if 'old_model_checkpoint_path' in globals():
-        print("Continuing from previous trained model:" , old_model_checkpoint_path , "...")
-        saver.restore(sess, old_model_checkpoint_path )
+    if 'old_model_checkpoint_path' in globals():  # 如果检测到全局变量中有历史模型存储路径，则先载入历史参数
+        print("Continuing from previous trained model:", old_model_checkpoint_path, "...")
+        saver.restore(sess, old_model_checkpoint_path)
 
-    batches = batch_iter(train_x, train_y, args.batch_size, args.num_epochs)
-    num_batches_per_epoch = (len(train_x) - 1) // args.batch_size + 1
+    batches = batch_iter(train_x, train_y, args.batch_size, args.num_epochs)  # 返回的是迭代器
+    num_batches_per_epoch = (len(train_x) - 1) // args.batch_size + 1  # 此为1个epoch的迭代次数(或number of batches)
 
     print("\nIteration starts.")
     print("Number of batches per epoch :", num_batches_per_epoch)
@@ -82,14 +83,17 @@ with tf.Session() as sess:
             model.decoder_target: batch_decoder_output
         }
 
+        # step为梯度下降优化次数
         _, step, loss = sess.run([model.update, model.global_step, model.loss], feed_dict=train_feed_dict)
 
         if step % 1000 == 0:
             print("step {0}: loss = {1}".format(step, loss))
 
         if step % num_batches_per_epoch == 0:
-            hours, rem = divmod(time.perf_counter() - start, 3600)
-            minutes, seconds = divmod(rem, 60)
+            # 下秒计算程序运行时间有点麻烦，可以使用时间格式转化函数
+            hours, rem = divmod(time.perf_counter() - start, 3600)  # 返回一个epoch所花的小时数,和余数
+            minutes, seconds = divmod(rem, 60)  # 计算分秒
             saver.save(sess, "./saved_model/model.ckpt", global_step=step)
+            # 使用GTX 1050Ti,一个epoch大概花7小时
             print(" Epoch {0}: Model is saved.".format(step // num_batches_per_epoch),
-            "Elapsed: {:0>2}:{:0>2}:{:05.2f}".format(int(hours),int(minutes),seconds) , "\n")
+            "Elapsed: {:0>2}:{:0>2}:{:05.2f}".format(int(hours), int(minutes), seconds), "\n")
